@@ -13,7 +13,7 @@
 #define DSIZE 8             // 더블 워드 Size(bytes)
 #define CHUNKSIZE (1 << 12) // Extend heap Size(4k bytes)
 
-#define MAX(x, y)((x) > (y) ? (x) : (y))
+#define MAX(x, y) ((x) > (y) ? (x) : (y))
 
 #define PACK(size, alloc) ((size) | (alloc)) // Size bit에 allocated bit를 pack(얹음)함
 /* Read and write a word at address p */
@@ -43,6 +43,7 @@ team_t team = {
     ""};
 
 static char *heap_listp;
+static char *last_bp;
 
 static void *extend_heap(size_t words);
 static void *coalesce(void *bp);
@@ -59,10 +60,10 @@ int mm_init(void)
     PUT(heap_listp + (1 * WSIZE), PACK(DSIZE, 1)); // 프롤로그 Header
     PUT(heap_listp + (2 * WSIZE), PACK(DSIZE, 1)); // 프롤로그 Footer
     PUT(heap_listp + (3 * WSIZE), PACK(0, 1));     // 에필로그 Header
-
-    
     if (extend_heap(CHUNKSIZE / WSIZE) == NULL)
         return -1;
+    
+    last_bp = heap_listp;                          // 힙의 가장 낮은 주소 + 8바이트 부터 시작(next fit)
     return 0;
 }
 
@@ -74,7 +75,7 @@ void *mm_malloc(size_t size)
     char *bp;
 
     /* 할당 Size 결정 */
-    asize = MAX(ALIGN(size + DSIZE), 2*DSIZE); // 8byte 미만의 요청은 8byte로 할당. 이상은 hdr,ftr 고려한 ALIGN 크기 중 큰 것.
+    asize = MAX(ALIGN(size + DSIZE), 2 * DSIZE); // 8byte 미만의 요청은 8byte로 할당. 이상은 hdr,ftr 고려한 ALIGN 크기 중 큰 것.
 
     /* 가용 블록 find */
     if ((bp = find_fit(asize)) != NULL)
@@ -83,9 +84,9 @@ void *mm_malloc(size_t size)
         return bp;        // 새로 할당된 블록의 포인터 리턴
     }
 
-    /* 가용 블록을 not find -> 힙 확장 */
+    /* 가용 블록 not found -> 힙 확장 */
     extendsize = MAX(asize, CHUNKSIZE); // 최소 Alignment 정책 크기 만큼 확장
-    if ((bp = extend_heap(extendsize / WSIZE)) == NULL) 
+    if ((bp = extend_heap(extendsize / WSIZE)) == NULL)
         return NULL;
     place(bp, asize);
     return bp;
@@ -108,7 +109,10 @@ static void *coalesce(void *bp)
     size_t size = GET_SIZE(HDRP(bp));                   // 현재 블록 사이즈
 
     if (prev_alloc && next_alloc) // 모두 할당된 경우
+    {
+        last_bp = bp;
         return bp;
+    }
 
     else if (prev_alloc && !next_alloc) // 다음 블록만 빈 경우
     {
@@ -130,7 +134,7 @@ static void *coalesce(void *bp)
         PUT(FTRP(NEXT_BLKP(bp)), PACK(size, 0)); // 다음 블록 푸터 재설정
         bp = PREV_BLKP(bp);                      // 이전 블록의 시작점으로 포인터 변경
     }
-
+    last_bp = bp;
     return bp; // 병합된 블록의 포인터 반환
 }
 
@@ -170,10 +174,10 @@ static void *extend_heap(size_t words)
 {
     char *bp;
 
-    size_t size = (words % 2) ? (words + 1) * WSIZE : words * WSIZE; // 2워드의 가장 가까운 배수로 반올림 
+    size_t size = (words % 2) ? (words + 1) * WSIZE : words * WSIZE; // 2워드의 가장 가까운 배수로 반올림
 
-    if ((long)(bp = mem_sbrk(size)) == -1) 
-        return NULL;                      // 힙 확장 불가능 시 return NULL
+    if ((long)(bp = mem_sbrk(size)) == -1)
+        return NULL; // 힙 확장 불가능 시 return NULL
 
     PUT(HDRP(bp), PACK(size, 0));         // 새 빈 블록 헤더 초기화
     PUT(FTRP(bp), PACK(size, 0));         // 새 빈 블록 푸터 초기화
@@ -184,12 +188,16 @@ static void *extend_heap(size_t words)
 
 static void *find_fit(size_t asize)
 {
-    void *bp = mem_heap_lo() + 2 * WSIZE; //힙의 가장 낮은 주소 + 8바이트 부터 시작(first fit)
-    while (GET_SIZE(HDRP(bp)) > 0)
+    void *bp;
+    // if (last_bp == NULL) last_bp = heap_listp;
+
+    for (bp = last_bp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp))
     {
         if (!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp)))) // 가용 상태(=1)이고, 사이즈가 적합하면
-            return bp;                                             // 해당 블록이 fit
-        bp = NEXT_BLKP(bp);                                        // fit하지 않으므로 다음 bp로 이동
+        {
+            last_bp = bp;
+            return bp; // 해당 블록이 fit
+        }
     }
     return NULL;
 }
