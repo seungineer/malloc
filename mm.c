@@ -11,7 +11,7 @@
 /* 기본 변수 및 매크로 정의 */
 #define WSIZE 4             // 워드, 헤더/푸터 Size(bytes)
 #define DSIZE 8             // 더블 워드 Size(bytes)
-#define CHUNKSIZE (1 << 12) // Extend heap Size(4k bytes)
+#define CHUNKSIZE (1 << 2) // Extend heap Size(4k bytes)
 
 #define MAX(x, y) ((x) > (y) ? (x) : (y))
 
@@ -60,10 +60,10 @@ int mm_init(void)
     PUT(heap_listp + (1 * WSIZE), PACK(DSIZE, 1)); // 프롤로그 Header
     PUT(heap_listp + (2 * WSIZE), PACK(DSIZE, 1)); // 프롤로그 Footer
     PUT(heap_listp + (3 * WSIZE), PACK(0, 1));     // 에필로그 Header
+    // last_bp = heap_listp;                          // 힙의 가장 낮은 주소 + 8바이트 부터 시작(next fit)
     if (extend_heap(CHUNKSIZE / WSIZE) == NULL)
         return -1;
     
-    last_bp = heap_listp;                          // 힙의 가장 낮은 주소 + 8바이트 부터 시작(next fit)
     return 0;
 }
 
